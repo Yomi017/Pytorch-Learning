@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>线性回归训练过程动画</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .controls {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .controls button {
+            padding: 10px 20px;
+            margin: 5px;
+            font-size: 16px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            background-color: #4CAF50;
+            color: white;
+        }
+        .controls button:hover {
+            background-color: #45a049;
+        }
+        .controls button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        .info-panel {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        .info-box {
+            padding: 15px;
+            border-radius: 8px;
+            border: 2px solid #ddd;
+        }
+        .parameters {
+            background-color: #e3f2fd;
+            border-color: #2196F3;
+        }
+        .loss-info {
+            background-color: #fff3e0;
+            border-color: #ff9800;
+        }
+        .epoch-info {
+            background-color: #f3e5f5;
+            border-color: #9c27b0;
+        }
+        .gradient-info {
+            background-color: #e8f5e8;
+            border-color: #4caf50;
+        }
+        .chart-container {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 20px;
+            margin-top: 20px;
+        }
+        .chart-wrapper {
+            position: relative;
+            border: 2px solid #333;
+            border-radius: 8px;
+            background-color: white;
+        }
+        canvas {
+            border-radius: 6px;
+        }
+        .step-indicator {
+            text-align: center;
+            margin: 20px 0;
+            padding: 15px;
+            background-color: #f0f0f0;
+            border-radius: 8px;
+            border-left: 5px solid #4CAF50;
+        }
+        .highlight {
+            animation: pulse 1s infinite;
+        }
+        @keyframes pulse {
+            0% { background-color: inherit; }
+            50% { background-color: #ffeb3b; }
+            100% { background-color: inherit; }
+        }
+        .chart-title {
+            text-align: center;
+            margin-bottom: 10px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 style="text-align: center; color: #333;">线性回归训练过程动画演示</h1>
+        
+        <div class="controls">
+            <button onclick="startAnimation()">开始训练</button>
+            <button onclick="resetAnimation()">重置</button>
+            <button onclick="pauseAnimation()" id="pauseBtn">暂停</button>
+        </div>
+
+        <div class="step-indicator" id="stepIndicator">
+            点击"开始训练"查看训练过程
+        </div>
+
+        <div class="info-panel">
+            <div class="info-box parameters" id="paramBox">
+                <h3>📊 当前参数</h3>
+                <p><strong>w (权重):</strong> <span id="currentW">随机初始化</span></p>
+                <p><strong>b (偏置):</strong> <span id="currentB">随机初始化</span></p>
+                <p><strong>真实参数:</strong> w=2.0, b=1.0</p>
+            </div>
+            
+            <div class="info-box loss-info" id="lossBox">
+                <h3>📈 损失信息</h3>
+                <p><strong>当前损失:</strong> <span id="currentLoss">--</span></p>
+                <p><strong>学习率:</strong> <span id="learningRate">0.1</span></p>
+                <p><strong>样本数量:</strong> <span id="sampleCount">50</span></p>
+            </div>
+            
+            <div class="info-box epoch-info" id="epochBox">
+                <h3>🔄 训练信息</h3>
+                <p><strong>当前轮次:</strong> <span id="currentEpoch">0</span></p>
+                <p><strong>总轮次:</strong> <span id="totalEpochs">50</span></p>
+                <p><strong>训练状态:</strong> <span id="trainingStatus">未开始</span></p>
+            </div>
+            
+            <div class="info-box gradient-info" id="gradBox">
+                <h3>📉 梯度信息</h3>
+                <p><strong>w的梯度:</strong> <span id="gradW">--</span></p>
+                <p><strong>b的梯度:</strong> <span id="gradB">--</span></p>
+                <p><strong>更新方向:</strong> <span id="updateDirection">--</span></p>
+            </div>
+        </div>
+
+        <div class="chart-container">
+            <div class="chart-wrapper">
+                <div class="chart-title">数据点与拟合直线</div>
+                <canvas id="dataChart" width="600" height="400"></canvas>
+            </div>
+            <div class="chart-wrapper">
+                <div class="chart-title">损失函数变化</div>
+                <canvas id="lossChart" width="400" height="400"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 全局变量
+        let isAnimating = false;
+        let isPaused = false;
+        
+        // 训练参数
+        let w = Math.random() * 2 - 1; // 随机初始化 [-1, 1]
+        let b = Math.random() * 2 - 1; // 随机初始化 [-1, 1]
+        const trueW = 2.0;
+        const trueB = 1.0;
+        const learningRate = 0.1;
+        const numSamples = 50;
+        const maxEpochs = 50;
+        let currentEpoch = 0;
+        
+        // 数据
+        let xData = [];
+        let yTrue = [];
+        let yPred = [];
+        let lossHistory = [];
+        
+        // Canvas 上下文
+        let dataCtx, lossCtx;
+        
+        // 初始化
+        function init() {
+            generateData();
+            initCanvas();
+            updateDisplay();
+            drawCharts();
+        }
+        
+        // 生成训练数据
+        function generateData() {
+            xData = [];
+            yTrue = [];
+            for (let i = 0; i < numSamples; i++) {
+                const x = (i / numSamples) * 10 - 5; // x范围: -5 to 5
+                const noise = (Math.random() - 0.5) * 0.5; // 添加噪声
+                xData.push(x);
+                yTrue.push(trueW * x + trueB + noise);
+            }
+        }
+        
+        // 初始化Canvas
+        function initCanvas() {
+            const dataCanvas = document.getElementById('dataChart');
+            const lossCanvas = document.getElementById('lossChart');
+            dataCtx = dataCanvas.getContext('2d');
+            lossCtx = lossCanvas.getContext('2d');
+        }
+        
+        // 绘制数据图表
+        function drawDataChart() {
+            const canvas = document.getElementById('dataChart');
+            const ctx = dataCtx;
+            
+            // 清空画布
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // 设置坐标系
+            const padding = 50;
+            const chartWidth = canvas.width - 2 * padding;
+            const chartHeight = canvas.height - 2 * padding;
+            
+            // 计算数据范围
+            const xMin = Math.min(...xData);
+            const xMax = Math.max(...xData);
+            const yMin = Math.min(...yTrue) - 2;
+            const yMax = Math.max(...yTrue) + 2;
+            
+            // 坐标转换函数
+            function toCanvasX(x) {
+                return padding + ((x - xMin) / (xMax - xMin)) * chartWidth;
+            }
+            
+            function toCanvasY(y) {
+                return padding + ((yMax - y) / (yMax - yMin)) * chartHeight;
+            }
+            
+            // 绘制坐标轴
+            ctx.strokeStyle = '#333';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            // X轴
+            ctx.moveTo(padding, toCanvasY(0));
+            ctx.lineTo(padding + chartWidth, toCanvasY(0));
+            // Y轴
+            ctx.moveTo(toCanvasX(0), padding);
+            ctx.lineTo(toCanvasX(0), padding + chartHeight);
+            ctx.stroke();
+            
+            // 绘制真实数据点
+            ctx.fillStyle = 'rgba(54, 162, 235, 0.8)';
+            for (let i = 0; i < numSamples; i++) {
+                ctx.beginPath();
+                ctx.arc(toCanvasX(xData[i]), toCanvasY(yTrue[i]), 4, 0, 2 * Math.PI);
+                ctx.fill();
+            }
+            
+            // 绘制真实直线（虚线）
+            ctx.strokeStyle = 'rgba(75, 192, 192, 0.8)';
+            ctx.lineWidth = 2;
+            ctx.setLineDash([5, 5]);
+            ctx.beginPath();
+            ctx.moveTo(toCanvasX(xMin), toCanvasY(trueW * xMin + trueB));
+            ctx.lineTo(toCanvasX(xMax), toCanvasY(trueW * xMax + trueB));
+            ctx.stroke();
+            ctx.setLineDash([]);
+            
+            // 绘制预测直线
+            ctx.strokeStyle = 'rgba(255, 99, 132, 1)';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(toCanvasX(xMin), toCanvasY(w * xMin + b));
+            ctx.lineTo(toCanvasX(xMax), toCanvasY(w * xMax + b));
+            ctx.stroke();
+            
+            // 添加图例
+            ctx.font = '12px Arial';
+            ctx.fillStyle = '#333';
+            ctx.fillText('🔵 真实数据点', padding, 20);
+            ctx.fillText('🔴 预测直线', padding + 120, 20);
+            ctx.fillText('🟢 真实直线', padding + 220, 20);
+        }
+        
+        // 绘制损失图表
+        function drawLossChart() {
+            const canvas = document.getElementById('lossChart');
+            const ctx = lossCtx;
+            
+            // 清空画布
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            if (lossHistory.length === 0) return;
+            
+            const padding = 50;
+            const chartWidth = canvas.width - 2 * padding;
+            const chartHeight = canvas.height - 2 * padding;
+            
+            // 计算损失范围
+            const maxLoss = Math.max(...lossHistory);
+            const minLoss = Math.min(...lossHistory);
+            const lossRange = maxLoss - minLoss;
+            
+            // 坐标转换函数
+            function toCanvasX(epoch) {
+                return padding + (epoch / Math.max(lossHistory.length - 1, 1)) * chartWidth;
+            }
+            
+            function toCanvasY(loss) {
+                if (lossRange === 0) return padding + chartHeight / 2;
+                return padding + ((maxLoss - loss) / lossRange) * chartHeight;
+            }
+            
+            // 绘制坐标轴
+            ctx.strokeStyle = '#333';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            // X轴
+            ctx.moveTo(padding, padding + chartHeight);
+            ctx.lineTo(padding + chartWidth, padding + chartHeight);
+            // Y轴
+            ctx.moveTo(padding, padding);
+            ctx.lineTo(padding, padding + chartHeight);
+            ctx.stroke();
+            
+            // 绘制损失曲线
+            if (lossHistory.length > 1) {
+                ctx.strokeStyle = 'rgba(255, 159, 64, 1)';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(toCanvasX(0), toCanvasY(lossHistory[0]));
+                for (let i = 1; i < lossHistory.length; i++) {
+                    ctx.lineTo(toCanvasX(i), toCanvasY(lossHistory[i]));
+                }
+                ctx.stroke();
+                
+                // 填充区域
+                ctx.fillStyle = 'rgba(255, 159, 64, 0.2)';
+                ctx.beginPath();
+                ctx.moveTo(toCanvasX(0), padding + chartHeight);
+                ctx.lineTo(toCanvasX(0), toCanvasY(lossHistory[0]));
+                for (let i = 1; i < lossHistory.length; i++) {
+                    ctx.lineTo(toCanvasX(i), toCanvasY(lossHistory[i]));
+                }
+                ctx.lineTo(toCanvasX(lossHistory.length - 1), padding + chartHeight);
+                ctx.closePath();
+                ctx.fill();
+            }
+            
+            // 绘制当前点
+            if (lossHistory.length > 0) {
+                ctx.fillStyle = 'rgba(255, 99, 132, 1)';
+                ctx.beginPath();
+                ctx.arc(toCanvasX(lossHistory.length - 1), toCanvasY(lossHistory[lossHistory.length - 1]), 4, 0, 2 * Math.PI);
+                ctx.fill();
+            }
+            
+            // 添加标签
+            ctx.font = '12px Arial';
+            ctx.fillStyle = '#333';
+            ctx.fillText('轮次', padding + chartWidth / 2, canvas.height - 10);
+            ctx.save();
+            ctx.translate(15, padding + chartHeight / 2);
+            ctx.rotate(-Math.PI / 2);
+            ctx.fillText('损失值', 0, 0);
+            ctx.restore();
+        }
+        
+        // 绘制所有图表
+        function drawCharts() {
+            drawDataChart();
+            drawLossChart();
+        }
+        
+        // 前向传播
+        function forwardPass() {
+            yPred = xData.map(x => w * x + b);
+            return yPred;
+        }
+        
+        // 计算损失
+        function calculateLoss() {
+            const predictions = forwardPass();
+            let totalLoss = 0;
+            for (let i = 0; i < numSamples; i++) {
+                const diff = predictions[i] - yTrue[i];
+                totalLoss += diff * diff;
+            }
+            return totalLoss / numSamples; // 均方误差
+        }
+        
+        // 计算梯度
+        function calculateGradients() {
+            const predictions = forwardPass();
+            let gradW = 0;
+            let gradB = 0;
+            
+            for (let i = 0; i < numSamples; i++) {
+                const diff = predictions[i] - yTrue[i];
+                gradW += 2 * diff * xData[i];
+                gradB += 2 * diff;
+            }
+            
+            gradW /= numSamples;
+            gradB /= numSamples;
+            
+            return { gradW, gradB };
+        }
+        
+        // 反向传播更新参数
+        function backwardPass() {
+            const { gradW, gradB } = calculateGradients();
+            
+            // 更新参数
+            w = w - learningRate * gradW;
+            b = b - learningRate * gradB;
+            
+            return { gradW, gradB };
+        }
+        
+        // 更新显示
+        function updateDisplay() {
+            document.getElementById('currentW').textContent = w.toFixed(4);
+            document.getElementById('currentB').textContent = b.toFixed(4);
+            document.getElementById('currentEpoch').textContent = currentEpoch;
+            document.getElementById('learningRate').textContent = learningRate;
+            document.getElementById('sampleCount').textContent = numSamples;
+            document.getElementById('totalEpochs').textContent = maxEpochs;
+            
+            const loss = calculateLoss();
+            document.getElementById('currentLoss').textContent = loss.toFixed(6);
+            
+            // 更新损失历史
+            if (currentEpoch > 0) {
+                lossHistory[currentEpoch - 1] = loss;
+            } else {
+                lossHistory.push(loss);
+            }
+            
+            // 重绘图表
+            drawCharts();
+        }
+        
+        // 训练一步
+        async function trainStep() {
+            return new Promise(resolve => {
+                // 高亮当前步骤
+                highlightStep('forward');
+                document.getElementById('stepIndicator').textContent = 
+                    `第 ${currentEpoch + 1} 轮 - 前向传播: 计算预测值 ŷ = wx + b`;
+                
+                setTimeout(() => {
+                    // 前向传播
+                    forwardPass();
+                    
+                    // 高亮损失计算
+                    highlightStep('loss');
+                    document.getElementById('stepIndicator').textContent = 
+                        `第 ${currentEpoch + 1} 轮 - 计算损失: MSE = (1/n)Σ(ŷ - y)²`;
+                    
+                    setTimeout(() => {
+                        // 计算损失和梯度
+                        const loss = calculateLoss();
+                        const { gradW, gradB } = calculateGradients();
+                        
+                        // 更新梯度显示
+                        document.getElementById('gradW').textContent = gradW.toFixed(6);
+                        document.getElementById('gradB').textContent = gradB.toFixed(6);
+                        
+                        const direction = gradW > 0 ? 'w减小' : 'w增大';
+                        document.getElementById('updateDirection').textContent = direction;
+                        
+                        // 高亮反向传播
+                        highlightStep('backward');
+                        document.getElementById('stepIndicator').textContent = 
+                            `第 ${currentEpoch + 1} 轮 - 反向传播: 更新参数 w = w - α∇w, b = b - α∇b`;
+                        
+                        setTimeout(() => {
+                            // 反向传播
+                            backwardPass();
+                            currentEpoch++;
+                            
+                            // 更新显示
+                            updateDisplay();
+                            
+                            // 检查收敛或完成
+                            if (loss < 0.01) {
+                                document.getElementById('stepIndicator').textContent = 
+                                    `🎉 训练完成！损失已收敛到 ${loss.toFixed(6)}`;
+                                document.getElementById('trainingStatus').textContent = '已收敛';
+                                isAnimating = false;
+                            } else if (currentEpoch >= maxEpochs) {
+                                document.getElementById('stepIndicator').textContent = 
+                                    `⏹️ 达到最大轮次！最终损失: ${loss.toFixed(6)}`;
+                                document.getElementById('trainingStatus').textContent = '训练完成';
+                                isAnimating = false;
+                            } else {
+                                document.getElementById('trainingStatus').textContent = '训练中...';
+                            }
+                            
+                            clearHighlight();
+                            resolve();
+                        }, 800);
+                    }, 800);
+                }, 800);
+            });
+        }
+        
+        // 高亮步骤
+        function highlightStep(step) {
+            clearHighlight();
+            if (step === 'forward') {
+                document.getElementById('paramBox').classList.add('highlight');
+            } else if (step === 'loss') {
+                document.getElementById('lossBox').classList.add('highlight');
+            } else if (step === 'backward') {
+                document.getElementById('gradBox').classList.add('highlight');
+            }
+        }
+        
+        // 清除高亮
+        function clearHighlight() {
+            document.querySelectorAll('.info-box').forEach(box => {
+                box.classList.remove('highlight');
+            });
+        }
+        
+        // 开始动画
+        async function startAnimation() {
+            if (isAnimating) return;
+            
+            isAnimating = true;
+            isPaused = false;
+            document.getElementById('pauseBtn').textContent = '暂停';
+            document.getElementById('trainingStatus').textContent = '训练中...';
+            
+            while (isAnimating && currentEpoch < maxEpochs) {
+                if (!isPaused) {
+                    await trainStep();
+                    await new Promise(resolve => setTimeout(resolve, 500)); // 控制动画速度
+                } else {
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                }
+            }
+        }
+        
+        // 暂停/继续动画
+        function pauseAnimation() {
+            if (!isAnimating) return;
+            
+            isPaused = !isPaused;
+            document.getElementById('pauseBtn').textContent = isPaused ? '继续' : '暂停';
+            document.getElementById('trainingStatus').textContent = isPaused ? '已暂停' : '训练中...';
+        }
+        
+        // 重置动画
+        function resetAnimation() {
+            isAnimating = false;
+            isPaused = false;
+            currentEpoch = 0;
+            
+            // 重新随机初始化参数
+            w = Math.random() * 2 - 1;
+            b = Math.random() * 2 - 1;
+            
+            // 清空损失历史
+            lossHistory = [];
+            
+            // 重置显示
+            document.getElementById('trainingStatus').textContent = '未开始';
+            document.getElementById('stepIndicator').textContent = '点击"开始训练"查看训练过程';
+            document.getElementById('pauseBtn').textContent = '暂停';
+            document.getElementById('gradW').textContent = '--';
+            document.getElementById('gradB').textContent = '--';
+            document.getElementById('updateDirection').textContent = '--';
+            
+            clearHighlight();
+            updateDisplay();
+        }
+        
+        // 页面加载完成后初始化
+        window.onload = function() {
+            init();
+        };
+    </script>
+</body>
+</html>
