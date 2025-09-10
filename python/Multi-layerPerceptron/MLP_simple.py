@@ -32,7 +32,6 @@ trainer = torch.optim.SGD(net.parameters(), lr=lr)
 
 train_iter, test_iter = d2l.load_data_fashion_mnist(batch_size)
 
-# 从包的__init__.py导入训练函数（实际来自MLP.py）
 from MLP import train_ch3
 
 if __name__ == '__main__':
